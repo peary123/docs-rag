@@ -1,0 +1,28 @@
+# FastAPI source archive and the extracted docs -- regenerated from a pinned
+# commit by scripts/00_prepare_data.py, never committed
+data/*
+!data/README.md
+
+# cached LLM responses (regenerable, and can contain API output)
+.llm_cache/
+
+# secrets
+.env
+
+# half-written review state, if a save is ever interrupted
+eval/*.tmp
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

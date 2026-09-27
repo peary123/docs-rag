@@ -1,0 +1,4 @@
+# Store text files with LF in the repository and check them out with the
+# platform's native line endings, so a repo written on Windows doesn't show up
+# as "every line changed" when it is cloned on Linux.
+* text=auto
