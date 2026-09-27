@@ -1,0 +1,2 @@
+# Model client, for generating candidate questions (and later, answers).
+openai>=1.59.0
