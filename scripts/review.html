@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Question set review</title>
+<style>
+  :root { --ink:#1d2330; --muted:#6a7282; --line:#dfe3ea; --bg:#f7f8fa; --card:#fff;
+          --accent:#2f5bd3; --keep:#1f8a4c; --drop:#b3261e; --mark:#ffe58a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
+  header { position:sticky; top:0; z-index:2; background:var(--card); border-bottom:1px solid var(--line); padding:10px 20px; }
+  h1 { font-size:17px; margin:0 0 4px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .tabs { margin-top:8px; display:flex; gap:4px; }
+  .tabs button { border:1px solid var(--line); background:var(--bg); padding:5px 12px; border-radius:6px 6px 0 0; cursor:pointer; }
+  .tabs button.on { background:var(--card); border-bottom-color:var(--card); font-weight:600; }
+  main { max-width:1100px; margin:16px auto; padding:0 20px 60px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:14px; }
+  .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .bar .where { font-weight:600; }
+  label.f { display:block; font-weight:600; margin:12px 0 4px; }
+  textarea, input[type=text] { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.keep { background:var(--keep); color:#fff; border-color:var(--keep); }
+  button.drop { background:var(--drop); color:#fff; border-color:var(--drop); }
+  select { font:inherit; padding:6px; border-radius:6px; border:1px solid var(--line); }
+  .status { margin-top:8px; padding:6px 10px; border-radius:6px; font-size:14px; }
+  .status.keep { background:#e6f4ec; color:var(--keep); }
+  .status.drop { background:#fbe9e7; color:var(--drop); }
+  .warn { margin-top:8px; padding:6px 10px; border-radius:6px; background:#fff4d6; font-size:14px; }
+  .note { margin-top:8px; padding:6px 10px; border-radius:6px; background:#eef2fb; font-size:14px; }
+  .passage-head { display:flex; justify-content:space-between; gap:12px; margin:14px 0 4px; font-size:14px; }
+  pre.passage { white-space:pre-wrap; word-break:break-word; margin:0; padding:12px; background:#fbfbfc;
+                border:1px solid var(--line); border-radius:6px; font:13px/1.55 ui-monospace, Consolas, monospace;
+                max-height:460px; overflow:auto; }
+  mark { background:var(--mark); }
+  ul.ev { list-style:none; padding:0; margin:6px 0 0; }
+  ul.ev li { display:flex; gap:8px; align-items:flex-start; padding:6px 8px; border:1px solid var(--line);
+             border-radius:6px; margin-bottom:6px; background:#fffdf3; font-size:13px; }
+  ul.ev li span { flex:1; font-family:ui-monospace, Consolas, monospace; white-space:pre-wrap; }
+  .decide { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .result { padding:8px 0; border-bottom:1px solid var(--line); }
+  .result p { margin:4px 0; font-size:13px; color:var(--muted); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Question set review</h1>
+  <div id="progress" class="muted">loading…</div>
+  <div id="targets" class="muted"></div>
+  <nav class="tabs">
+    <button data-tab="review" class="on">Review candidates</button>
+    <button data-tab="add">Write your own</button>
+    <button data-tab="summary">Summary</button>
+  </nav>
+</header>
+
+<main>
+<!-- ============================================================ review -->
+<section id="tab-review">
+  <div class="card">
+    <div class="bar">
+      <button id="prev">◀ Prev</button>
+      <span class="where" id="where"></span>
+      <button id="next">Next ▶</button>
+      <label class="muted"><input type="checkbox" id="skip" checked> skip decided</label>
+    </div>
+    <div id="status"></div>
+    <div id="hints"></div>
+
+    <label class="f" for="q">Question</label>
+    <textarea id="q" rows="2"></textarea>
+    <label class="f" for="a">Reference answer</label>
+    <textarea id="a" rows="3"></textarea>
+
+    <label class="f">Evidence <span class="muted">— the exact text that supports the answer</span></label>
+    <div class="bar">
+      <button id="add-ev">Add selected text as evidence</button>
+      <span class="muted">select text in a passage below first</span>
+    </div>
+    <ul class="ev" id="evlist"></ul>
+
+    <div id="passages"></div>
+
+    <div class="decide">
+      <button class="keep" id="keep">Keep ✓</button>
+      <span class="muted">Ctrl+Enter</span>
+      <span style="flex:1"></span>
+      <select id="reason"><option value="">Drop because…</option></select>
+      <button class="drop" id="drop">Drop ✗</button>
+      <button id="undo">Undo decision</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ add -->
+<section id="tab-add" hidden>
+  <div class="card">
+    <div class="note">
+      <strong>Unanswerable questions</strong> test whether the system admits it doesn't know.
+      Write ones a real user might plausibly ask about FastAPI whose answer is <em>not</em> in these docs.
+      Before saving one, search its key terms and read the top results: save it only if none of them answers it.
+      <br><strong>Your own answerable question</strong> (for example, one that needs two sections):
+      search, open a section, select the supporting text and add it as evidence.
+    </div>
+    <label class="f" for="nq">Question</label>
+    <textarea id="nq" rows="2"></textarea>
+    <label class="f" for="na">Reference answer <span class="muted">— leave empty for an unanswerable question</span></label>
+    <textarea id="na" rows="2"></textarea>
+    <label class="f" for="nn">Note <span class="muted">— optional: why it is unanswerable, what you searched</span></label>
+    <input type="text" id="nn">
+
+    <label class="f">Search the docs</label>
+    <div class="bar">
+      <input type="text" id="sq" placeholder="key terms, e.g. graphql subscriptions" style="flex:1">
+      <button id="sgo">Search</button>
+    </div>
+    <div id="results"></div>
+    <div id="add-passage"></div>
+
+    <label class="f">Evidence</label>
+    <div class="bar"><button id="add-ev2">Add selected text as evidence</button></div>
+    <ul class="ev" id="evlist2"></ul>
+
+    <div class="decide"><button class="keep" id="save-own">Save</button><span class="muted" id="save-kind"></span></div>
+  </div>
+  <div class="card">
+    <strong>Written by you</strong>
+    <table id="own-table"></table>
+  </div>
+</section>
+
+<!-- ============================================================ summary -->
+<section id="tab-summary" hidden>
+  <div class="card" id="summary"></div>
+</section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let data = null;            // {candidates, decisions, handwritten, drop_reasons}
+let pos = 0;                // index into data.candidates
+const drafts = {};          // candidate_id -> {question, answer, evidence}
+const sectionByKey = {};    // every section on screen, by "doc#anchor"
+let ownEvidence = [];
+let lastSearch = "";
+
+// Offsets are counted in Unicode code points to match Python; JavaScript
+// strings count UTF-16 units, which disagree after every emoji in the text.
+const cps = (s) => Array.from(s);
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} :
+    {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const storedToDraft = (e) => ({section_key: `${e.doc_id}#${e.anchor}`, start: e.start, end: e.end, text: e.quote});
+const cur = () => data.candidates[pos];
+
+function draftFor(c) {
+  if (!drafts[c.candidate_id]) {
+    const d = data.decisions[c.candidate_id];
+    const src = d && d.decision === "keep" ? d : c;
+    drafts[c.candidate_id] = {question: src.question, answer: src.answer,
+                              evidence: src.evidence.map(storedToDraft)};
+  }
+  return drafts[c.candidate_id];
+}
+
+// ------------------------------------------------------------- passages
+function passage(sec, spans) {
+  sectionByKey[sec.key] = sec;
+  const wrap = document.createElement("div");
+  const head = document.createElement("div");
+  head.className = "passage-head";
+  const t = document.createElement("span");
+  t.textContent = `${sec.page} — ${sec.title}`;
+  const link = document.createElement("a");
+  link.href = sec.url; link.target = "_blank"; link.rel = "noopener";
+  link.textContent = "open on the site ↗";
+  head.append(t, link);
+
+  const pre = document.createElement("pre");
+  pre.className = "passage";
+  pre.dataset.key = sec.key;
+  const chars = cps(sec.text);
+  const marks = spans.filter((e) => e.section_key === sec.key)
+    .map((e) => [Math.max(e.start, sec.start) - sec.start, Math.min(e.end, sec.end) - sec.start])
+    .filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+  let at = 0;
+  for (const [a, b] of marks) {
+    if (a > at) pre.append(chars.slice(at, a).join(""));
+    const m = document.createElement("mark");
+    m.textContent = chars.slice(Math.max(a, at), b).join("");
+    pre.append(m);
+    at = Math.max(at, b);
+  }
+  pre.append(chars.slice(at).join(""));
+  wrap.append(head, pre);
+  return wrap;
+}
+
+function selectionSpan() {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) throw new Error("Select some text in a passage first.");
+  const r = sel.getRangeAt(0);
+  const within = (node) => (node.nodeType === 1 ? node : node.parentElement).closest("pre.passage");
+  const pre = within(r.startContainer);
+  if (!pre || pre !== within(r.endContainer)) throw new Error("Select text inside a single passage.");
+  const sec = sectionByKey[pre.dataset.key];
+  const before = document.createRange();
+  before.selectNodeContents(pre);
+  before.setEnd(r.startContainer, r.startOffset);
+  const start = sec.start + cps(before.toString()).length;
+  const text = r.toString();
+  return {section_key: sec.key, start, end: start + cps(text).length, text};
+}
+
+function evidenceList(ul, items, onRemove) {
+  ul.replaceChildren();
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="muted">No evidence yet.</span>';
+    ul.append(li);
+  }
+  items.forEach((e, i) => {
+    const li = document.createElement("li");
+    const s = document.createElement("span");
+    const text = e.text.trim();
+    s.textContent = text.length > 240 ? text.slice(0, 240) + " …" : text;
+    const x = document.createElement("button");
+    x.textContent = "remove";
+    x.onclick = () => onRemove(i);
+    li.append(s, x);
+    ul.append(li);
+  });
+}
+
+// ------------------------------------------------------------- review tab
+function renderReview() {
+  const c = cur(), d = data.decisions[c.candidate_id], dr = draftFor(c);
+  $("#where").textContent =
+    `${c.candidate_id} · ${c.kind === "multi" ? "two-section" : "single-section"} · ${pos + 1} of ${data.candidates.length}`;
+
+  const st = $("#status");
+  st.className = "";
+  st.textContent = "";
+  if (d) {
+    st.className = "status " + d.decision;
+    st.textContent = d.decision === "keep"
+      ? `Kept${d.edited ? " (edited)" : ""} — ${d.at}. Deciding again replaces it.`
+      : `Dropped: ${data.drop_reasons[d.reason]} — ${d.at}. Deciding again replaces it.`;
+  }
+
+  const hints = $("#hints");
+  hints.replaceChildren();
+  if (c.overlap >= 5) {
+    const w = document.createElement("div");
+    w.className = "warn";
+    w.textContent = `The question shares a ${c.overlap}-word phrase with its source. ` +
+      "If it just copies the passage's wording, drop it as too easy — or rewrite it the way a user would ask.";
+    hints.append(w);
+  }
+  if (c.kind === "multi") {
+    const n = document.createElement("div");
+    n.className = "note";
+    n.textContent = "Two-section candidate: keep it as two-section only if a full answer really needs both passages. " +
+      "If one passage is enough, remove the other passage's evidence and keep it — it becomes single-section.";
+    hints.append(n);
+  }
+
+  $("#q").value = dr.question;
+  $("#a").value = dr.answer;
+  evidenceList($("#evlist"), dr.evidence, (i) => { dr.evidence.splice(i, 1); renderReview(); });
+  const ps = $("#passages");
+  ps.replaceChildren(...c.sections.map((s) => passage(s, dr.evidence)));
+  $("#reason").value = "";
+}
+
+function step(dir) {
+  const n = data.candidates.length;
+  const skip = $("#skip").checked;
+  for (let k = 1; k <= n; k++) {
+    const i = (pos + dir * k + n) % n;
+    if (!skip || !data.decisions[data.candidates[i].candidate_id]) { pos = i; renderReview(); return true; }
+  }
+  return false;
+}
+
+function afterDecision() {
+  if (!step(1)) {
+    renderReview();
+    alert("Every candidate has a decision. Next: write the unanswerable questions in “Write your own”.");
+  }
+  window.scrollTo(0, 0);
+}
+
+async function keep() {
+  const c = cur(), dr = draftFor(c);
+  try {
+    Object.assign(data, await api("/api/decide", {candidate_id: c.candidate_id, decision: "keep",
+      question: dr.question, answer: dr.answer, evidence: dr.evidence}));
+    delete drafts[c.candidate_id];
+    renderProgress();
+    afterDecision();
+  } catch (e) { alert(e.message); }
+}
+
+async function drop() {
+  const c = cur(), reason = $("#reason").value;
+  if (!reason) { alert("Pick a reason for dropping it."); return; }
+  try {
+    Object.assign(data, await api("/api/decide", {candidate_id: c.candidate_id, decision: "drop", reason}));
+    delete drafts[c.candidate_id];
+    renderProgress();
+    afterDecision();
+  } catch (e) { alert(e.message); }
+}
+
+async function undo() {
+  const c = cur();
+  Object.assign(data, await api("/api/undo", {candidate_id: c.candidate_id}));
+  delete drafts[c.candidate_id];
+  renderProgress();
+  renderReview();
+}
+
+// ------------------------------------------------------------- write-your-own tab
+function renderOwn() {
+  evidenceList($("#evlist2"), ownEvidence, (i) => { ownEvidence.splice(i, 1); renderOwn(); });
+  $("#save-kind").textContent = ownEvidence.length
+    ? "will be saved as answerable (needs a reference answer)"
+    : "no evidence: will be saved as unanswerable (leave the answer empty)";
+  const tbl = $("#own-table");
+  tbl.replaceChildren();
+  if (!data.handwritten.length) { tbl.innerHTML = '<tr><td class="muted">Nothing yet.</td></tr>'; return; }
+  for (const h of data.handwritten) {
+    const tr = document.createElement("tr");
+    const kind = h.evidence.length ? "answerable" : "unanswerable";
+    tr.innerHTML = "<td></td><td></td><td></td><td></td>";
+    tr.children[0].textContent = h.hid;
+    tr.children[1].textContent = kind;
+    tr.children[2].textContent = h.question;
+    const del = document.createElement("button");
+    del.textContent = "delete";
+    del.onclick = async () => {
+      if (!confirm("Delete this question?")) return;
+      Object.assign(data, await api("/api/delete", {hid: h.hid}));
+      renderProgress(); renderOwn();
+    };
+    tr.children[3].append(del);
+    tbl.append(tr);
+  }
+}
+
+async function search() {
+  const q = $("#sq").value.trim();
+  if (!q) return;
+  lastSearch = q;
+  const res = await api("/api/search?q=" + encodeURIComponent(q));
+  const box = $("#results");
+  box.replaceChildren();
+  if (!res.length) { box.innerHTML = '<p class="muted">No section contains these terms.</p>'; return; }
+  for (const r of res) {
+    const div = document.createElement("div");
+    div.className = "result";
+    const b = document.createElement("button");
+    b.textContent = "show";
+    b.onclick = () => { $("#add-passage").replaceChildren(passage(r, ownEvidence)); };
+    const t = document.createElement("strong");
+    t.textContent = ` ${r.page} — ${r.title}`;
+    const p = document.createElement("p");
+    p.textContent = r.text.slice(0, 220).replace(/\s+/g, " ") + " …";
+    div.append(b, t, p);
+    box.append(div);
+  }
+}
+
+async function saveOwn() {
+  const question = $("#nq").value, answer = $("#na").value, note = $("#nn").value;
+  if (!ownEvidence.length && !lastSearch &&
+      !confirm("You haven't searched the docs for this question. Save it as unanswerable anyway?")) return;
+  try {
+    Object.assign(data, await api("/api/add", {question, answer, note, evidence: ownEvidence}));
+    $("#nq").value = ""; $("#na").value = ""; $("#nn").value = "";
+    ownEvidence = []; lastSearch = "";
+    $("#results").replaceChildren(); $("#add-passage").replaceChildren();
+    renderProgress(); renderOwn();
+  } catch (e) { alert(e.message); }
+}
+
+// ------------------------------------------------------------- progress & summary
+function counts() {
+  const ds = Object.values(data.decisions);
+  const kept = ds.filter((d) => d.decision === "keep");
+  const sectionsOf = (ev) => new Set(ev.map((e) => `${e.doc_id}#${e.anchor}`)).size;
+  const hw = data.handwritten;
+  const hwUn = hw.filter((h) => !h.evidence.length);
+  return {
+    decided: ds.length, kept: kept.length, edited: kept.filter((d) => d.edited).length,
+    dropped: ds.length - kept.length,
+    multi: kept.filter((d) => sectionsOf(d.evidence) >= 2).length +
+           hw.filter((h) => sectionsOf(h.evidence) >= 2).length,
+    answerable: kept.length + hw.length - hwUn.length, unanswerable: hwUn.length, written: hw.length,
+    reasons: ds.filter((d) => d.decision === "drop").reduce((m, d) => (m[d.reason] = (m[d.reason] || 0) + 1, m), {}),
+  };
+}
+
+function renderProgress() {
+  const k = counts();
+  $("#progress").textContent =
+    `Reviewed ${k.decided} of ${data.candidates.length} · kept ${k.kept} (${k.edited} edited) · ` +
+    `dropped ${k.dropped} · written by you ${k.written}`;
+  $("#targets").textContent =
+    `Target — answerable: ${k.answerable} / about 80 · two-section: ${k.multi} (aim for 10+) · ` +
+    `unanswerable: ${k.unanswerable} / 10–15`;
+}
+
+function renderSummary() {
+  const k = counts(), box = $("#summary");
+  box.replaceChildren();
+  const h = document.createElement("div");
+  h.innerHTML = "<strong>Drop reasons</strong>";
+  const t = document.createElement("table");
+  for (const [key, label] of Object.entries(data.drop_reasons)) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td></td>";
+    tr.children[0].textContent = label;
+    tr.children[1].textContent = k.reasons[key] || 0;
+    t.append(tr);
+  }
+  const kh = document.createElement("div");
+  kh.innerHTML = "<br><strong>Kept so far</strong> <span class='muted'>— click one to open it</span>";
+  const kt = document.createElement("table");
+  data.candidates.forEach((c, i) => {
+    const d = data.decisions[c.candidate_id];
+    if (!d || d.decision !== "keep") return;
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.innerHTML = "<td></td><td></td><td></td>";
+    tr.children[0].textContent = c.candidate_id;
+    tr.children[1].textContent = d.edited ? "edited" : "";
+    tr.children[2].textContent = d.question;
+    tr.onclick = () => { pos = i; $("#skip").checked = false; show("review"); };
+    kt.append(tr);
+  });
+  box.append(h, t, kh, kt);
+}
+
+// ------------------------------------------------------------- wiring
+function show(tab) {
+  for (const b of document.querySelectorAll(".tabs button")) b.classList.toggle("on", b.dataset.tab === tab);
+  for (const s of ["review", "add", "summary"]) $("#tab-" + s).hidden = s !== tab;
+  if (tab === "review") renderReview();
+  if (tab === "add") renderOwn();
+  if (tab === "summary") renderSummary();
+}
+
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => show(b.dataset.tab));
+$("#prev").onclick = () => step(-1);
+$("#next").onclick = () => step(1);
+$("#keep").onclick = keep;
+$("#drop").onclick = drop;
+$("#undo").onclick = undo;
+$("#q").oninput = (e) => { draftFor(cur()).question = e.target.value; };
+$("#a").oninput = (e) => { draftFor(cur()).answer = e.target.value; };
+$("#add-ev").onclick = () => {
+  try { draftFor(cur()).evidence.push(selectionSpan()); getSelection().removeAllRanges(); renderReview(); }
+  catch (e) { alert(e.message); }
+};
+$("#add-ev2").onclick = () => {
+  try {
+    ownEvidence.push(selectionSpan()); getSelection().removeAllRanges(); renderOwn();
+    const shown = $("#add-passage pre");
+    if (shown) $("#add-passage").replaceChildren(passage(sectionByKey[shown.dataset.key], ownEvidence));
+  } catch (e) { alert(e.message); }
+};
+$("#sgo").onclick = search;
+$("#sq").onkeydown = (e) => { if (e.key === "Enter") search(); };
+$("#save-own").onclick = saveOwn;
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.key === "Enter" && !$("#tab-review").hidden) { e.preventDefault(); keep(); }
+});
+
+(async () => {
+  data = await api("/api/state");
+  for (const [key, label] of Object.entries(data.drop_reasons)) {
+    const o = document.createElement("option");
+    o.value = key; o.textContent = label;
+    $("#reason").append(o);
+  }
+  const first = data.candidates.findIndex((c) => !data.decisions[c.candidate_id]);
+  pos = first >= 0 ? first : 0;
+  renderProgress();
+  renderReview();
+})();
+</script>
+</body>
+</html>
