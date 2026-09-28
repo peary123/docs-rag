@@ -50,6 +50,12 @@ DOCS_BUILD_DIR = CORPUS_DIR / "docs" / "en"
 DOCS_DIR = DOCS_BUILD_DIR / "docs"
 DOCS_SRC_DIR = CORPUS_DIR / "docs_src"
 
+# Retrieval models, both local and free to run. bge-small is a small, strong
+# English embedding model; the cross-encoder reranks a short candidate list.
+EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+INDEX_DIR = PROJECT_ROOT / ".index"  # cached chunk embeddings, regenerable
+
 CACHE_DIR = Path(os.environ.get("LLM_CACHE_DIR", PROJECT_ROOT / ".llm_cache"))
 RESULTS_DIR = PROJECT_ROOT / "results"
 

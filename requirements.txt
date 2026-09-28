@@ -1,2 +1,8 @@
-# Model client, for generating candidate questions (and later, answers).
+# Model client, for generating candidate questions and (later) answers.
 openai>=1.59.0
+
+# Retrieval: keyword search, and local embedding + reranking models (CPU is fine).
+rank_bm25>=0.2.2
+sentence-transformers>=3.0
+
+pytest>=8

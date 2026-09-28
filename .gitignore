@@ -6,6 +6,9 @@ data/*
 # cached LLM responses (regenerable, and can contain API output)
 .llm_cache/
 
+# cached chunk embeddings (regenerable from the corpus and the model)
+.index/
+
 # secrets
 .env
 
