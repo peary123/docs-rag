@@ -1,0 +1,93 @@
+{
+  "paraphrase": {
+    "expected": "correct",
+    "n": 112,
+    "as_expected": 112,
+    "rate": 1.0,
+    "ci": [
+      0.9668374746205164,
+      1.0
+    ],
+    "verdicts": {
+      "correct": 112
+    },
+    "rejected": {
+      "lost code or identifiers": 4
+    }
+  },
+  "substitution": {
+    "expected": "not correct",
+    "n": 86,
+    "as_expected": 77,
+    "rate": 0.8953488372093024,
+    "ci": [
+      0.812927940593436,
+      0.9439597372751682
+    ],
+    "verdicts": {
+      "incorrect": 77,
+      "correct": 9
+    },
+    "rejected": {
+      "phrase too long to be one fact": 20,
+      "phrase occurs 2 times": 6,
+      "phrase occurs 0 times": 3,
+      "incomplete reply": 1
+    }
+  },
+  "swap": {
+    "expected": "not correct",
+    "n": 116,
+    "as_expected": 112,
+    "rate": 0.9655172413793104,
+    "ci": [
+      0.9146791795449883,
+      0.986510390687719
+    ],
+    "verdicts": {
+      "incorrect": 103,
+      "partial": 9,
+      "correct": 4
+    },
+    "rejected": {}
+  },
+  "supported": {
+    "expected": "faithful",
+    "n": 92,
+    "as_expected": 91,
+    "rate": 0.9891304347826086,
+    "ci": [
+      0.9409707111384389,
+      0.9980787204236383
+    ],
+    "verdicts": {
+      "faithful": 91,
+      "unfaithful": 1
+    },
+    "rejected": {}
+  },
+  "fabricated": {
+    "expected": "unfaithful",
+    "n": 92,
+    "as_expected": 87,
+    "rate": 0.9456521739130435,
+    "ci": [
+      0.8790130893472858,
+      0.9765652816314958
+    ],
+    "verdicts": {
+      "unfaithful": 87,
+      "faithful": 5
+    },
+    "rejected": {}
+  },
+  "fabricated_paired": {
+    "pairs": 92,
+    "clean_passed": 91,
+    "caught": 86
+  },
+  "planted_errors": {
+    "n": 294,
+    "rejected": 276
+  }
+}
