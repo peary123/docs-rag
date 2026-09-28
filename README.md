@@ -1,12 +1,60 @@
 # RAG over the FastAPI docs
 
 Question answering over FastAPI's documentation, with answers that cite the
-section they came from, and a hand-checked question set that every retrieval
-choice is measured against.
+section they came from and decline when the docs don't cover the question,
+and a reviewed question set that every choice is measured against.
 
-So far this repository holds the corpus, the question set, a measured
-comparison of two chunkings and four retrievers, and answer generation scored
-by an LLM judge that is itself tested first. Serving it is not in yet.
+- **88.8% of answers judged correct**, against 60.3% for the same model with no
+  retrieval: 33 more of the 116 answerable questions, McNemar p < 0.001
+  (`gpt-4o-mini` answering, `gpt-4o` judging).
+- **All 12 questions the docs can't answer were refused**, and 5 of the 116
+  answerable ones, 4 of those after retrieval had missed the evidence.
+- **Hybrid BM25 + dense retrieval** gets the evidence into a 2,500-token context
+  for 86.2% of questions, in 14 ms on a laptop CPU. A cross-encoder reranker
+  added nothing measurable at 50 times the latency, and one chunking's apparent
+  lead over the other vanished once both got the same context budget.
+- **The judge is tested before it is trusted**: it accepted 112 of 112 correct
+  answers reworded, and rejected 276 of 294 planted errors.
+
+No LangChain, no LlamaIndex: chunking, retrieval, fusion, prompting and judging
+are written in this repo, and every prompt sent to a model is readable verbatim
+in the response cache on disk.
+
+This is an evaluated pipeline run as scripts, not a deployed service; see
+[What I would do next](#what-i-would-do-next).
+
+## How it works
+
+```mermaid
+flowchart TD
+    subgraph build [built once]
+        D["FastAPI docs, one pinned commit<br/>121 pages, code includes resolved"] --> C["one chunk per section,<br/>long ones split: 1,204 chunks"]
+    end
+    C --> B["BM25"]
+    C --> V["dense: bge-small-en-v1.5"]
+    Q["question"] --> B
+    Q --> V
+    B -->|top 50| F["Reciprocal Rank Fusion"]
+    V -->|top 50| F
+    F --> K["best excerpts that fit<br/>in 2,500 tokens"]
+    K --> M["gpt-4o-mini, temperature 0<br/>answer only from the excerpts"]
+    Q --> M
+    M --> A["answer that cites excerpts as [n],<br/>or the fixed refusal sentence"]
+
+    subgraph scoring [evaluation only]
+        R["reference answer<br/>+ evidence spans"] --> J["gpt-4o judges<br/>correctness, faithfulness"]
+    end
+    A -.-> J
+```
+
+Pages are rendered the way the docs site renders them, so the code examples
+pulled in from other files are part of the index. BM25 and the embedding model
+each rank every chunk; Reciprocal Rank Fusion merges the two rankings by rank
+alone, so neither retriever's score scale dominates. The best chunks that fit
+in 2,500 tokens go to the model, numbered, and the answer cites them by number;
+each number resolves to a link to that section on fastapi.tiangolo.com. When
+the excerpts don't answer the question, the model is told to reply with one
+fixed sentence, which is what makes refusals countable without a judge.
 
 ## The corpus
 
@@ -320,6 +368,46 @@ tests/          63 tests
 results.md      every experiment and its configuration
 NOTES.md        decisions, and what went wrong
 ```
+
+## Known limitations
+
+- **Small numbers.** With 116 answerable questions, the 95% interval on
+  correctness is 81.8–93.3%, and one question moves it by 0.9 points. Each of the
+  12 unanswerable questions is 8 points of refusal accuracy, and the 8
+  two-section questions are too few to report on their own.
+- **One reviewer.** Every question and reference answer was reviewed, by one
+  person, and the judge scores against those references.
+- **The judge is unreliable on names inside code.** All 5 of its real misses
+  were a wrong name in code, and it also rejects some harmless renames. An
+  answer with a plausible but wrong parameter name may be scored correct.
+- **The faithfulness figure includes a prompt artefact.** 12 of the 17 answers
+  it flags are flagged only for a closing line the prompt asked for; 84.7% is
+  reported with them in.
+- **Not served.** There is no API and no load test. The latencies above are per
+  query from the evaluation runs on a laptop: retrieval 14 ms at the median, the
+  model call 1.5 s median and 3.7 s p95 in a batch of 8 calls in parallel.
+- **One version of the docs.** Everything is pinned to FastAPI 0.141.1; the
+  answers and the question set can be wrong for other releases.
+
+## What I would do next
+
+- **Fix the closing line.** Have the model say what *these excerpts* don't
+  cover, or drop the instruction, and measure it as its own comparison declared
+  before the run: faithfulness before and after, correctness unchanged.
+- **Work on retrieval, because that's where the errors are.** 7 of the 13
+  answers that aren't correct come from the 16 questions whose evidence never
+  reached the model. The first step is reading those 16 for what they have in
+  common; query rewriting and a reranker trained on documentation and code are
+  the candidates.
+- **Serve it**: `POST /ask` on FastAPI, vectors in Postgres with pgvector,
+  Docker Compose. The parts worth measuring: an answer cache keyed by the
+  normalised question and the index version, so a re-index can't serve stale
+  answers; exact rather than approximate vector search at this size, so the
+  served retrieval is the evaluated one; and p50 and p95 per stage. With the
+  model call at ~1.5 s, a cache should move the median a lot and leave p95 to
+  the misses unless nearly every question repeats.
+- **Make the judge count names in code**, and validate the new prompt on a
+  fresh set of probes rather than the ones that exposed the problem.
 
 ---
 
