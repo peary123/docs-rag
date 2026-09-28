@@ -211,6 +211,34 @@ The near misses are the ones to watch in step 4: retrieval will return a
 plausible page, and the question is whether the model says "not covered" or
 builds an answer out of it.
 
+### Chunk length is counted with the embedding model's tokenizer
+
+"500 tokens" means nothing until you say whose tokens. bge-small reads at most
+512 tokens, two of them special, and silently drops the rest. A chunk measured
+with any other tokenizer can be 500 by that count and 560 by the model's, and a
+dense retriever that only reads the first 90% of a chunk is being scored on
+truncation, not retrieval. So both chunkers count with the model's own
+tokenizer. The largest chunk either scheme produces is 501 tokens (re-tokenizing
+a window's text on its own shifts one boundary by a token), well inside 510.
+
+### A section that is only a heading is folded into the next
+
+20 of the 1,080 sections are a heading with nothing under it before the next
+heading — a parent heading followed directly by its first child. As chunks they
+would be two or three title words, exactly the thing BM25's length
+normalisation over-ranks, and they hold no answer. They are merged into the
+section that follows, keeping their words as context.
+
+### What counts as a hit, and checking the rule doesn't decide the result
+
+A retrieved chunk is a hit when it covers at least half of an evidence span.
+Any overlap would count a chunk that brushes the first few characters of a
+passage; requiring the whole span would penalise the smaller heading chunks for
+a quote that straddles a split. Evidence spans are short — median 101
+characters, longest 413 — so half is reachable under both chunkings. Under the
+loosest rule, any overlap, every recall@5 moves by at most 1.8 points and no
+conclusion changes.
+
 ---
 
 ## Things that bit me
@@ -278,3 +306,74 @@ The page converts its offsets to code points before sending them, and the server
 does not trust them anyway: it checks that the text at those offsets is the text
 the reviewer selected, and otherwise searches the section for it. Tested by
 selecting text after an emoji on three different pages.
+
+---
+
+## Things that bit me in retrieval
+
+### The chunking comparison was unfair, and nearly went into the README
+
+The first table was clear: at equal k, fixed windows beat heading chunks with
+all four retrievers, by up to 15 points of recall@5, with MRR gaps whose
+confidence intervals all excluded zero. It looked like a finding.
+
+It was chunk size. A fixed chunk is ~500 tokens; a heading chunk has a median of
+178. Five of one is nearly three times the text of five of the other, and more
+text covers more evidence however it was cut. Scored instead on whatever fits in
+the same 2,500 tokens — about five fixed chunks, nine heading chunks — the
+differences are −5.2, +0.9, +3.4 and −1.7 points, and none is significant.
+
+This check was not planned; it was added after the first run. The honest
+framing is that it tests whether a result survives a fairer comparison, not
+that it found a better number — and it is recorded as added afterwards in
+results.md. It also changed the configuration carried into generation: heading
+chunks with hybrid retrieval tie the best result at that budget.
+
+The general lesson: "top k" is only a fair unit when the k things are the same
+size.
+
+### The reranker did not pay for itself
+
+A cross-encoder reranking the hybrid top 20 is the textbook last step, and the
+plan expected it to be the headline gain. Measured: +3.4 and +1.7 points of
+recall@5 (McNemar p = 0.45 and 0.73), MRR unchanged, and query latency from
+12 ms to about 600 ms on a CPU.
+
+The likely reason is the training data: `ms-marco-MiniLM-L-6-v2` learned
+relevance from web-search queries and passages, and these are documentation
+sections, a good share of them code. A reranker trained on this kind of text
+might do better; this one is not worth its cost here, and the README says so
+rather than reporting the +3.4.
+
+### "BM25 is better at identifiers" can't be tested on this set
+
+The standard argument for hybrid retrieval is that keyword search catches exact
+identifiers — `response_model`, `--proxy-headers` — that embeddings blur. The
+plan lists it as an interview question. On this question set it cannot be
+confirmed or refuted: only 10 of the 116 questions contain anything code-like,
+because review rewrote them the way users ask, and users describe what they want
+more than they name it. On those 10, one question is ten points.
+
+The design choice that made the BM25-against-dense comparison fair — questions
+that don't echo the docs' wording — also leaves too few identifier questions to
+test this. A first attempt at the count also flagged 107 of 116, because
+"FastAPI" itself looks like a camelCase identifier.
+
+### PyTorch and Anaconda's numpy cannot share a process
+
+Installing sentence-transformers into the Anaconda base environment worked, and
+then `import torch` alongside numpy killed the process:
+
+    OMP: Error #15: Initializing libiomp5md.dll, but found libiomp5md.dll
+    already initialized.
+
+Anaconda's numpy is built on Intel MKL and loads its OpenMP runtime; PyTorch
+ships its own copy. The error message suggests `KMP_DUPLICATE_LIB_OK=TRUE`, and
+also says that it "may cause crashes or silently produce incorrect results" —
+not an option for a project whose output is a table of numbers.
+
+The fix is a project virtual environment (`.venv`, gitignored), where numpy
+comes from PyPI without MKL and there is only one OpenMP runtime. The packages
+that had gone into the base environment were uninstalled and the one they had
+upgraded (`click`) put back, so nothing else on the machine depends on this
+project's heavy dependencies.

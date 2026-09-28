@@ -4,9 +4,9 @@ Question answering over FastAPI's documentation, with answers that cite the
 section they came from, and a hand-checked question set that every retrieval
 choice is measured against.
 
-So far this repository holds the corpus — what gets indexed, and how it is
-turned into text — and the tooling that builds the question set. Retrieval and
-answer generation are not in yet.
+So far this repository holds the corpus, the question set, and a measured
+comparison of two chunkings and four retrievers. Answer generation is not in
+yet.
 
 ## The corpus
 
@@ -118,7 +118,54 @@ figure by 12.5 points.
 them** — gpt-4o writes, gpt-4o-mini answers — since a model tends to favour
 answers phrased the way it would phrase them.
 
+## Retrieval
+
+Two chunkings — fixed 500-token windows, and one chunk per section — against
+four retrievers: BM25, dense (`bge-small-en-v1.5`), a hybrid of the two merged
+by Reciprocal Rank Fusion, and the hybrid reranked by a cross-encoder. Scored
+on the 116 answerable questions; a chunk is a hit when it covers at least half
+of an evidence span.
+
+| retriever | fixed, recall@5 | headings, recall@5 | fixed, @2.5k tokens | headings, @2.5k tokens | latency |
+|---|---|---|---|---|---|
+| BM25 | 81.0% | 66.4% | 81.0% | 75.9% | 1–2 ms |
+| dense | 81.0% | 73.3% | 81.0% | 81.9% | 10 ms |
+| hybrid | 82.8% | 78.4% | 82.8% | **86.2%** | 12–14 ms |
+| hybrid + rerank | **86.2%** | 80.2% | **86.2%** | 84.5% | 580–690 ms |
+
+**The chunking result reverses once the comparison is fair.** At an equal
+number of chunks, fixed windows beat heading chunks with every retriever, by up
+to 15 points. But a fixed chunk holds ~500 tokens and a heading chunk ~180, so
+the top five of one is nearly three times the text of the other. At an equal
+2,500-token budget — what generation will actually get — no difference between
+the chunkings is significant (McNemar p ≥ 0.26). The gap was size, not
+boundaries. This check was added after the first run exposed the imbalance.
+
+**The reranker buys nothing measurable, at 50 times the latency**: +3.4 and
++1.7 recall@5, neither significant, MRR unchanged. **Hybrid is never worse than
+either retriever alone** and clearly beats BM25 alone on heading chunks (+12.1
+recall@5, p = 0.003).
+
+Generation will use **heading chunks with hybrid retrieval, 2,500 tokens of
+context**: tied for best at that budget, at 14 ms rather than 580, and each
+chunk is a whole section — the unit an answer cites. Full tables, confidence
+intervals and every paired test are in [results.md](results.md).
+
 ## Running it
+
+Everything runs in a project virtual environment; see
+[NOTES.md](NOTES.md#pytorch-and-anacondas-numpy-cannot-share-a-process) for
+why not the Anaconda base environment. On Windows:
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+Then run every command below with `.venv\Scripts\python` in place of `python`.
 
 ```bash
 python scripts/00_prepare_data.py
@@ -157,6 +204,15 @@ Generation costs about $0.40 and is cached, so re-running it is free. Review
 opens in the browser and saves as it goes; the build step validates every
 evidence span against the corpus and writes `eval/questions.jsonl`.
 
+```bash
+python scripts/05_retrieval_eval.py
+```
+
+The retrieval comparison runs locally and costs nothing. The first run
+downloads two small models and encodes both chunkings (about a minute each on a
+laptop CPU); after that the vectors are cached in `.index/` and a full run takes
+about three minutes, almost all of it the reranker.
+
 ## Layout
 
 ```
@@ -165,11 +221,16 @@ src/
   corpus.py     renders each page into indexed text + section anchors
   evalset.py    sampling sections, locating evidence, validating the set
   review.py     review decisions, hand-written questions, section search
+  chunking.py   fixed-window and per-section chunking
+  retrieval.py  BM25, dense, hybrid (RRF), cross-encoder reranking
+  scoring.py    hits against evidence spans, recall@5, MRR, paired tests
   llm.py        model calls with a disk cache
 scripts/        entry points, numbered in the order they're useful;
                 review.html is the review page
 eval/           candidates, the review record, and the question set
-tests/          39 tests
+results/        per-question retrieval records and the summary
+tests/          47 tests
+results.md      every experiment and its configuration
 NOTES.md        decisions, and what went wrong
 ```
 
