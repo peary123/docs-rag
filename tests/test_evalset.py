@@ -21,6 +21,7 @@ from src.evalset import (  # noqa: E402
     EXCLUDED_SECTIONS, EvalQuestion, Evidence, kind_of, locate, longest_shared_run,
     make_evidence, sample_sections, sections, validate,
 )
+from src.evalset import term_hits as rv_term_hits  # noqa: E402
 
 HAVE_DATA = config.DOCS_DIR.exists()
 
@@ -237,6 +238,28 @@ def test_a_browser_selection_after_an_emoji_still_lands_on_the_right_words() -> 
     except ValueError:
         return
     raise AssertionError("a selection that is not on the page must be refused")
+
+
+def test_term_hits_match_at_word_starts_only() -> None:
+    """A substring search for "aws" finds "flaws"; that must not count."""
+    doc = _doc(PAGE + "\nSome tutorials have security flaws and throttling.\n")
+    docs = {doc.doc_id: doc}
+    hits = rv_term_hits(docs, ["aws", "throttl", "flaws", "kafka"])
+    assert hits == {"aws": [], "throttl": [doc.doc_id], "flaws": [doc.doc_id], "kafka": []}
+
+
+def test_unanswerable_questions_come_last_and_never_renumber_the_rest() -> None:
+    doc, state = _doc(), _state()
+    cand = _candidate(doc)
+    rv.decide(state, cand, "keep", question=cand["question"], answer=cand["answer"],
+              evidence=[Evidence(**cand["evidence"][0])])
+    before = rv.build_questions([cand], state)
+    after = rv.build_questions([cand], state, [{"question": "Does FastAPI include an ORM?"}])
+    assert [q.id for q in before] == ["q001"]
+    assert after[0].as_dict() == before[0].as_dict()
+    assert (after[1].id, after[1].answerable, after[1].kind, after[1].origin) == \
+        ("q002", False, "unanswerable", "written")
+    assert validate(after, {doc.doc_id: doc}) == []
 
 
 def test_section_search_ranks_the_matching_section_first() -> None:

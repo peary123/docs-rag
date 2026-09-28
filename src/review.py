@@ -164,8 +164,14 @@ def delete_handwritten(state: dict, hid: str) -> None:
 
 # --------------------------------------------------------------- building
 
-def build_questions(candidates: list[dict], state: dict) -> list[EvalQuestion]:
-    """The final question set: kept candidates first, then hand-written ones."""
+def build_questions(candidates: list[dict], state: dict,
+                    unanswerable: list[dict] = ()) -> list[EvalQuestion]:
+    """The final question set: kept candidates, then hand-written questions,
+    then the unanswerable ones from eval/unanswerable.jsonl.
+
+    Kept candidates always come first, so adding questions later never
+    renumbers the ones that retrieval results are already reported against.
+    """
     out: list[EvalQuestion] = []
     for c in candidates:
         d = state["decisions"].get(c["candidate_id"])
@@ -182,6 +188,10 @@ def build_questions(candidates: list[dict], state: dict) -> list[EvalQuestion]:
         out.append(EvalQuestion(
             id="", question=h["question"], answer=h["answer"], answerable=bool(ev),
             evidence=ev, kind=kind_of(ev), origin="handwritten"))
+    for u in unanswerable:
+        out.append(EvalQuestion(
+            id="", question=u["question"], answer=None, answerable=False,
+            evidence=[], kind="unanswerable", origin="written"))
     for i, q in enumerate(out, 1):
         q.id = f"q{i:03d}"
     return out

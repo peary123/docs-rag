@@ -229,6 +229,22 @@ def longest_shared_run(question: str, passage: str) -> int:
     return 0
 
 
+# ------------------------------------------------------------ unanswerable
+
+def term_hits(docs: dict[str, Document], terms: list[str]) -> dict[str, list[str]]:
+    """Pages containing each term, matched case-insensitively at a word start.
+
+    Word start, not anywhere: a plain substring search for "aws" finds
+    "flaws" in the JWT tutorial. A term may still end mid-word, so "throttl"
+    covers "throttle" and "throttling".
+    """
+    out: dict[str, list[str]] = {}
+    for term in terms:
+        pattern = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(term), re.IGNORECASE)
+        out[term] = sorted(d for d, doc in docs.items() if pattern.search(doc.text))
+    return out
+
+
 # ------------------------------------------------------------ question set
 
 @dataclass
@@ -239,7 +255,12 @@ class EvalQuestion:
     answerable: bool
     evidence: list[Evidence] = field(default_factory=list)
     kind: str = "single"  # "single" | "multi" | "unanswerable"
-    origin: str = "generated"  # "generated" | "edited" | "handwritten"
+    # "generated": drawn from a sampled section and kept as written;
+    # "edited": drawn from a section, then changed in review;
+    # "handwritten": written in the review page;
+    # "written": an unanswerable question from eval/unanswerable.jsonl, not
+    # drawn from any section, each with the terms that prove it unanswerable.
+    origin: str = "generated"
     candidate_id: str | None = None
 
     def as_dict(self) -> dict:
