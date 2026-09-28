@@ -39,6 +39,17 @@ that cannot be resolved is an error, not a gap.
 Every retrieval and generation choice is measured against a fixed set of
 questions, so the set is built with more care than anything that uses it.
 
+**128 questions: 116 the docs answer, 12 they cannot.** Every answerable
+question carries a reference answer and the exact passages that support it,
+and 114 of the 116 were changed in review.
+
+| | questions |
+|---|---|
+| answerable from one section | 108 |
+| answerable only from two sections | 8 |
+| not answerable from the docs | 12 |
+| pages the answers are drawn from | 98 of 121 |
+
 **Candidates are generated, then every one is reviewed by hand.** A model reads
 a sampled section and writes one question a user might ask about it, with a
 reference answer and verbatim quotes as evidence. Sections are sampled across
@@ -55,11 +66,34 @@ A candidate reaches review only if every quote it gives can be found in the
 source section, word for word. The 124 offered cover 103 of the 121 pages.
 
 Review happens in a local page (`scripts/03_review.py`): each candidate next to
-its source, evidence highlighted. It is kept, edited, or dropped with a reason,
-and the reviewer adds questions the docs *cannot* answer, to test whether the
-system admits it doesn't know. Every decision is timestamped in
-`eval/review_state.json`. **The review is in progress; the final set's numbers
-will be reported here when it is done.**
+its source, evidence highlighted, kept, edited, or dropped with a reason. Every
+decision is timestamped in `eval/review_state.json`.
+
+| review outcome | candidates |
+|---|---|
+| kept as generated | 2 |
+| kept after editing | 114 |
+| dropped: answer not supported by the passage | 6 |
+| dropped: ambiguous | 1 |
+| dropped: duplicate | 1 |
+
+Review changed the set more than it pruned it. 90 questions were rewritten the
+way a user would ask them — *"How can I serialize bytes as base64 in a FastAPI
+JSON response using Pydantic?"* became *"My FastAPI response model has a bytes
+field. How do I make it come out as base64 in the JSON response?"* — and 106
+reference answers were expanded, 42 of them gaining the code that does it. Six
+of the eight drops were answers that claimed more than their passage said: the
+generator overreaches, which is the case for reviewing every candidate rather
+than a sample.
+
+**The 12 unanswerable questions test whether the system admits it doesn't
+know.** They are written for the set rather than drawn from a section, and each
+is a different kind of trap: a feature FastAPI doesn't have (*built-in rate
+limiting*), something documented only in the unindexed API reference, a
+neighbouring page that looks relevant but doesn't answer (the JWT tutorial for
+*refresh tokens*), or an integration the docs never mention. Each lists the
+terms any answer would have to use, and the build fails if one of them appears
+anywhere in the indexed pages — so "unanswerable" is checked, not asserted.
 
 **Where an answer lives is stored as a span of text, not a chunk id.** Two
 chunking strategies will be compared, and a chunk id from one does not exist in
@@ -72,7 +106,13 @@ writing questions from a passage tends to reuse its wording, which flatters
 keyword search for reasons that have nothing to do with real users. The
 generator is told not to, and each candidate records the longest phrase it
 shares with its source: 99 of 124 share no more than three consecutive words,
-12 share five or more. The reviewer sees that number as a warning.
+12 share five or more. The reviewer sees that number as a warning, and after
+review **4 of the 116** answerable questions share five or more.
+
+Only 8 questions need two sections, too few to report as their own category.
+They count in every overall
+figure but get no headline of their own. One question moves an 8-question
+figure by 12.5 points.
 
 **The questions are written by a different model from the one that will answer
 them** — gpt-4o writes, gpt-4o-mini answers — since a model tends to favour
@@ -129,7 +169,7 @@ src/
 scripts/        entry points, numbered in the order they're useful;
                 review.html is the review page
 eval/           candidates, the review record, and the question set
-tests/          37 tests
+tests/          39 tests
 NOTES.md        decisions, and what went wrong
 ```
 

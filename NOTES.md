@@ -154,14 +154,62 @@ the figure again for the final set.
 
 Generation is automated; judgement is not. Each candidate is kept, edited, or
 dropped with a reason, in a local page that shows it next to its source text.
-The reviewer also writes the questions the docs *cannot* answer — those test
-whether the system admits it does not know, and only a person can check that a
-plausible question really has no answer here. The page has a search box for
-exactly that check.
 
 Every decision is saved with a timestamp to `eval/review_state.json`, so the
 file doubles as the record of how the set was made: how many were kept as
 generated, how many were edited, how many dropped, and for what.
+
+### What the review actually did
+
+Of 124 candidates, 116 were kept and 8 dropped — but only 2 were kept as the
+model wrote them. The review's real work was editing, not filtering:
+
+    questions rewritten in a user's words      90
+    reference answers expanded                106   (42 gained the code that does it)
+    evidence re-selected                       93
+
+Two things in that are worth keeping in mind for later stages:
+
+- **The generator overreaches.** Six of the eight drops were answers claiming
+  more than their passage says. A model asked to answer "only from the text"
+  still fills gaps from what it knows — the same failure the RAG system itself
+  will be measured for in the faithfulness check.
+- **Rewriting removed most of the keyword bias.** Candidates sharing a five-word
+  phrase with their source went from 12 of 124 to 4 of 116. That matters
+  directly for the BM25-against-dense comparison: questions echoing the docs'
+  wording would hand keyword search an advantage real users never give it.
+
+### "Unanswerable" has to be checked, not asserted
+
+The 12 questions the docs cannot answer are written for the set rather than
+drawn from a section, and "the docs don't cover this" is exactly the kind of
+claim that is easy to believe and wrong. So each one lists the terms any correct
+answer would have to use, and the build fails if any of them appears anywhere
+in the indexed pages.
+
+The check earned its keep while the list was being written. Of the first 24
+topics I expected the docs to be silent on, it found 11 covered — GraphQL,
+server-sent events, MongoDB, database migrations, Celery, Gunicorn, API
+versioning among them. A second pass with synonyms caught two more: HTTP/2 (the
+deployment page says Hypercorn supports it) and graceful shutdown. A question
+about any of those, labelled unanswerable, would have scored a correct answer
+as a hallucination.
+
+It also needed one fix of its own: a plain substring search for "aws" matched
+"flaws" in the JWT tutorial. Terms now match at the start of a word, which
+still lets "throttl" cover "throttle" and "throttling".
+
+The 12 are spread across kinds of trap, because they fail differently:
+
+    outside the docs    5   an integration never mentioned (Kafka, gRPC, Sentry)
+    near miss           4   a relevant-looking page that doesn't answer it
+                            (the JWT tutorial, asked about refresh tokens)
+    false premise       2   a feature FastAPI doesn't have (built-in rate limiting)
+    excluded content    1   answered only in the unindexed API reference
+
+The near misses are the ones to watch in step 4: retrieval will return a
+plausible page, and the question is whether the model says "not covered" or
+builds an answer out of it.
 
 ---
 
