@@ -1,0 +1,70 @@
+{
+  "rag": {
+    "correct": 103,
+    "n": 116,
+    "verdicts": {
+      "correct": 103,
+      "partial": 5,
+      "incorrect": 8
+    }
+  },
+  "closed_book": {
+    "correct": 70,
+    "n": 116,
+    "verdicts": {
+      "correct": 70,
+      "incorrect": 34,
+      "partial": 12
+    }
+  },
+  "rag_vs_closed_book": {
+    "fixed": 39,
+    "broken": 6,
+    "mcnemar_p": 5.417768988991156e-07
+  },
+  "by_evidence": {
+    "evidence in context": {
+      "n": 100,
+      "verdicts": {
+        "correct": 94,
+        "partial": 3,
+        "incorrect": 3
+      },
+      "refused": 1
+    },
+    "evidence not in context": {
+      "n": 16,
+      "verdicts": {
+        "correct": 9,
+        "partial": 2,
+        "incorrect": 5
+      },
+      "refused": 4
+    }
+  },
+  "faithfulness": {
+    "answers": 111,
+    "faithful": 94,
+    "claims": 431,
+    "unsupported": 19,
+    "unfaithful_only_by_disclaimer": 12
+  },
+  "refusals": {
+    "rag": {
+      "unanswerable_refused": 12,
+      "n_unanswerable": 12,
+      "answerable_refused": 5,
+      "n_answerable": 116
+    },
+    "closed_book": {
+      "unanswerable_refused": 0,
+      "n_unanswerable": 12,
+      "answerable_refused": 1,
+      "n_answerable": 116
+    }
+  },
+  "citations": {
+    "n": 99,
+    "cites_evidence": 93
+  }
+}
