@@ -33,6 +33,9 @@ difference rather than an assumption. The docs have moved since the cutoff —
 they now teach `fastapi dev` and recommend `uv`, and cover FastAPI Cloud —
 which is where closed-book answers should break.
 
+Measured in the end: closed-book, the model gets 60.3% of the answerable
+questions right; with retrieval, 88.8%.
+
 ### The markdown is not the page
 
 31.3% of the characters in the index are not in the markdown files. 446
@@ -207,9 +210,10 @@ The 12 are spread across kinds of trap, because they fail differently:
     false premise       2   a feature FastAPI doesn't have (built-in rate limiting)
     excluded content    1   answered only in the unindexed API reference
 
-The near misses are the ones to watch in step 4: retrieval will return a
+The near misses are the ones to watch in generation: retrieval will return a
 plausible page, and the question is whether the model says "not covered" or
-builds an answer out of it.
+builds an answer out of it. It said "not covered" to all four, and to the
+other eight.
 
 ### Chunk length is counted with the embedding model's tokenizer
 
@@ -238,6 +242,58 @@ a quote that straddles a split. Evidence spans are short — median 101
 characters, longest 413 — so half is reachable under both chunkings. Under the
 loosest rule, any overlap, every recall@5 moves by at most 1.8 points and no
 conclusion changes.
+
+### A refusal is one fixed sentence
+
+The unanswerable questions need a refusal rate, and there are 12 of them: one
+question is 8 points. Asking a model whether an answer "declined" would put a
+second judge's errors into that figure. So the prompt asks for one exact
+sentence, "The documentation does not cover this.", and a refusal is that
+sentence, matched as a string. Quotes, bold and a missing full stop are
+tolerated; extra words are not. An answer that starts with the sentence and
+carries on is an answer (these are counted separately; there were none).
+
+The same match counts false refusals on the answerable questions, which matter
+as much: a system that refuses everything scores 12 of 12.
+
+### The judge is tested on answers with known verdicts
+
+The plan's check on the LLM judge was to grade 30 answers by hand and measure
+agreement. That wasn't possible here, and a model grading them would be a second
+judge, not a check on the first. Instead each reference answer is turned into
+answers whose right verdict is known by construction: reworded (correct), one
+fact changed (not), swapped for the most similar other question's answer (not);
+and for faithfulness, the reference against the retrieved excerpts (supported)
+and with an invented sentence added (not).
+
+What this can't do: it tests one kind of error, planted and clear-cut, where
+real errors can be omissions and half-truths. And its labels are only as good
+as the construction, which is why every probe is checked mechanically where
+possible and every disagreement is written out. Reading them is how the
+construction failures below were found. It must not be described as agreement
+with manual labels; there were none.
+
+### Correctness and faithfulness are separate judges
+
+A correctness judge compares with the reference answer and can't tell whether an
+answer came from the excerpts or from memory, and a model trained on older
+versions of these docs often remembers correctly. Faithfulness checks every
+claim against the excerpts, and a true claim that isn't in them fails. The two
+disagree exactly where it matters: q007's `uvicorn main:app --workers 4` is
+judged correct and unsupported.
+
+### Probes are written by the answering model, not the judge
+
+The probes come from gpt-4o-mini, so they read like the answers being judged,
+and gpt-4o never grades text it wrote. Same reasoning as gpt-4o writing the
+questions and gpt-4o-mini answering them.
+
+### Judges don't see citation markers
+
+The [n] markers are stripped before judging, so the correctness judge can't tell
+a retrieval answer from a closed-book one by its brackets. Citations are scored
+separately, without a judge: does the answer cite an excerpt that covers the
+evidence span.
 
 ---
 
@@ -377,3 +433,79 @@ comes from PyPI without MKL and there is only one OpenMP runtime. The packages
 that had gone into the base environment were uninstalled and the one they had
 upgraded (`click`) put back, so nothing else on the machine depends on this
 project's heavy dependencies.
+
+---
+
+## Things that bit me in generation
+
+### The prompt's own disclaimer was most of the faithfulness failures
+
+The answer prompt says: if the excerpts answer only part of the question,
+answer that part "and say what they don't cover". 14 answers did, and the judge
+flagged 13 of them. 12 of the 17 unfaithful answers are unfaithful only because
+of that closing line.
+
+The judge was told to ignore statements about what the excerpts don't cover,
+and didn't. But it had a point: 9 of the 14 lines are about "the
+documentation", not "the excerpts", and that is often false. q032's answer says the
+documentation doesn't cover deployment processes; the docs have a chapter on
+deployment. A user would take that as a statement about FastAPI's docs.
+
+The prompt was fixed before the run, so the headline stays at 84.7%, with the
+split reported as post hoc. The next version should drop the instruction or
+require "these excerpts".
+
+### The checks on the probes were weaker than the probes
+
+Of the 19 judge disagreements, 13 were the probe's fault:
+
+- 4 substitutions changed only something the user chooses, such as a variable
+  name (`tags_metadata` to `tags_info`) or a module in an example, or swapped
+  `JSONResponse` for `PlainTextResponse` as an example of a Response subclass,
+  which is still true. The model was asked for a change that makes the answer
+  wrong; the check only verified that the phrase occurred once.
+- 4 swaps came from near-duplicates: q030 and q102 are both about classes as
+  dependencies, and each one's answer answers the other.
+- 4 "invented" sentences were in the excerpts. The check was a substring match;
+  the model wrote that the development server's default port is 8000, and the
+  excerpt shows `Server started at http://127.0.0.1:8000`. q094's "invented"
+  claim that the server won't log anything is in its excerpt almost word for
+  word.
+- 1 reference answer (q105) adds an inference the docs don't state, so its
+  "supported" probe wasn't.
+
+The reported numbers stay uncorrected, with this reading next to them.
+Correcting only the disagreements would be one-sided: the agreements were not
+all read, and some of them are construction failures the judge happened to
+"get right" (next).
+
+### The judge doesn't read names in code reliably
+
+5 real misses, all a name inside code: `app.webhook` for `app.webhooks`,
+`JSONResponse(data=...)` for `content=`, a keyword argument the question itself
+spells out, and two renames made in one place only, so the code no longer fits
+together (`as connection:` followed by `websocket.receive_json()`). In the
+other direction it rejected harmless renames of an exception class the user
+defines (q021) and of the user's own dependency functions (q073), while
+accepting others (q072, q082).
+
+Telling these apart took reading the whole answer, not the changed phrase: a
+rename is harmless only if the old name appears nowhere else. q116 and q074
+looked like harmless renames at first, and weren't. The correctness prompt says code in the
+reference illustrates the answer and need not be repeated; the judge seems to
+stretch that to whether names in code matter at all.
+
+For a docs QA system this is the weak spot to know about: an answer with a
+plausible but wrong parameter name may be scored correct. That may flatter the
+closed-book number more than the retrieval one, since retrieval answers copy
+names from the excerpts, but it was not measured.
+
+### Grounding has a cost, and it shows
+
+The 6 questions closed-book answers correctly and retrieval doesn't are, all
+but one, questions where retrieval missed the evidence, and 4 of them are
+refusals. The model knew the answer and was told not to use what it knows.
+That is the intended trade (an answer traceable to a page, or none), but it
+means every retrieval miss becomes a refusal or a gap. The next gain is in
+retrieval, which gets the evidence into the context for 86.2% of questions,
+not in generation.

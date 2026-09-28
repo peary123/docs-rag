@@ -4,9 +4,9 @@ Question answering over FastAPI's documentation, with answers that cite the
 section they came from, and a hand-checked question set that every retrieval
 choice is measured against.
 
-So far this repository holds the corpus, the question set, and a measured
-comparison of two chunkings and four retrievers. Answer generation is not in
-yet.
+So far this repository holds the corpus, the question set, a measured
+comparison of two chunkings and four retrievers, and answer generation scored
+by an LLM judge that is itself tested first. Serving it is not in yet.
 
 ## The corpus
 
@@ -146,10 +146,78 @@ boundaries. This check was added after the first run exposed the imbalance.
 either retriever alone** and clearly beats BM25 alone on heading chunks (+12.1
 recall@5, p = 0.003).
 
-Generation will use **heading chunks with hybrid retrieval, 2,500 tokens of
+Generation uses **heading chunks with hybrid retrieval, 2,500 tokens of
 context**: tied for best at that budget, at 14 ms rather than 580, and each
 chunk is a whole section — the unit an answer cites. Full tables, confidence
 intervals and every paired test are in [results.md](results.md).
+
+## Answers
+
+`gpt-4o-mini` answers from the retrieved excerpts only, cites them by number,
+and replies *"The documentation does not cover this."* when they don't answer
+the question. A `gpt-4o` judge scores the answers — after the judge itself has
+been tested.
+
+| | with retrieval | same model, closed-book |
+|---|---|---|
+| correct, 116 answerable questions | **88.8%** | 60.3% |
+| refused, 12 unanswerable questions | **12 of 12** | 0 of 12 |
+| refused, 116 answerable questions | 5 | 1 |
+| every claim supported by the excerpts | 84.7% | — |
+| cites the excerpt that holds the evidence | 93.9% | — |
+
+**Retrieval is worth 28 points of correctness**: 39 questions fixed, 6 broken
+(McNemar p < 0.001). The model was trained on an older version of these docs,
+so closed-book is the honest baseline — and it gets 60% right from memory.
+
+**What is left is mostly retrieval's.** When the evidence reaches the model,
+94% of answers are correct; for the 16 questions where it doesn't, 56%. 7 of the
+13 answers that aren't correct come from those 16. Of the 6 questions
+closed-book gets right and retrieval doesn't, 5 are retrieval misses and 4 end
+in a refusal: the system declining rather than guessing, as it was told to.
+
+**A refusal is a fixed sentence, matched as a string**, so refusal accuracy
+needs no judge. Every unanswerable question was refused. Closed-book, the model
+declined none of them.
+
+**Most faithfulness failures come from one line of the prompt.** 12 of the 17
+answers with an unsupported claim are flagged only for a closing remark about
+what isn't covered. The prompt asks the model to say what *the excerpts* don't
+cover; 9 of the 14 answers that do say *the documentation* instead, which is
+often false — the docs cover plenty the excerpts didn't include. 5 answers
+hold substantive unsupported content, 3 of them after retrieval missed the
+evidence and the model filled the gap from memory. The prompt was fixed before
+the run and is not tuned after it; the fix is left for the next version.
+
+### Is the judge right?
+
+No answer was graded by hand. Instead the judges are tested against answers
+whose right verdict is known by construction. Each reference answer is
+reworded (should be judged correct), has one fact changed, or is swapped for
+the most similar other question's answer (should not be); and, against the
+retrieved excerpts, is checked as is (supported) and with one invented sentence
+added (not supported). 498 probes in all.
+
+| probe | judged as it should be |
+|---|---|
+| correct answers, reworded | **112 of 112** |
+| planted errors: a changed fact, a swapped answer, an invented sentence | **276 of 294 (93.9%)** |
+| supported answers | 91 of 92 |
+
+Reading the 19 disagreements, 13 are the construction's fault rather than the
+judge's: a "wrong" substitution that only renamed a variable the user chooses,
+a near-duplicate question whose answer does fit, an "invented" sentence that the
+excerpts turn out to contain. 5 are real misses, all the same kind: a name
+inside code that is wrong or no longer fits (`app.webhook` for
+`app.webhooks`). **The judge is reliable on facts stated in prose and
+inconsistent on names inside code** — worth knowing in a docs QA system, where
+the names are half the answer.
+
+This is weaker than hand-grading: a planted error is one kind of error, real
+ones can be subtler, and a planted "error" can turn out harmless, as 13 did. What
+it offers instead is scale and a trail: 498 probes rather than 30 answers, each
+recording exactly what was changed, so every disagreement can be traced. Details
+in [results.md](results.md#can-the-judges-be-trusted).
 
 ## Running it
 
@@ -213,6 +281,21 @@ downloads two small models and encodes both chunkings (about a minute each on a
 laptop CPU); after that the vectors are cached in `.index/` and a full run takes
 about three minutes, almost all of it the reranker.
 
+```bash
+python scripts/06_generate_answers.py
+```
+
+```bash
+python scripts/07_validate_judge.py
+```
+
+```bash
+python scripts/08_score_answers.py
+```
+
+Answers, then the judge's test, then the scores. About $3 in API calls, nearly
+all of it the `gpt-4o` judge, and cached like everything else.
+
 ## Layout
 
 ```
@@ -224,12 +307,16 @@ src/
   chunking.py   fixed-window and per-section chunking
   retrieval.py  BM25, dense, hybrid (RRF), cross-encoder reranking
   scoring.py    hits against evidence spans, recall@5, MRR, paired tests
+  generation.py answering from excerpts, citations, refusals, closed-book
+  judge.py      correctness and faithfulness judges
+  calibration.py answers with known verdicts, for testing the judges
   llm.py        model calls with a disk cache
 scripts/        entry points, numbered in the order they're useful;
                 review.html is the review page
-eval/           candidates, the review record, and the question set
-results/        per-question retrieval records and the summary
-tests/          47 tests
+eval/           candidates, the review record, the question set, judge probes
+results/        per-question records and summaries: retrieval, answers,
+                judge verdicts
+tests/          63 tests
 results.md      every experiment and its configuration
 NOTES.md        decisions, and what went wrong
 ```
